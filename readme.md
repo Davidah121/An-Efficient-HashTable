@@ -72,7 +72,7 @@ Separate Chaining is a valid choice still but it runs a few issues regarding tot
 
 An obvious solution is to just use open addressing with pointers. This allows us to know if a bucket is filled at all and deleting is easy. Just delete the pointer and set it to nullptr. For storage, use a std::vector as its the easiest choice.
 
-For all of these, assume there will be things not correct so don't copy this. Ignore typos and errors as these are just to get the point across.
+For all of these code segments, assume there will be things not correct so don't copy this. Ignore typos and errors as these are just to get the point across.
 
 ```C++
 
@@ -296,7 +296,7 @@ Notice how in rehash, we didn't create any new data and we also don't check if i
 So with all this, you should have a functional hashmap. So how good is it? 
 
 The quick and certainly not exhaustive test I developed should give an idea of how good a hashmap is at the basics. Not any one pattern. Its possible that your particular usage pattern can exhibit properties that make one hashmap better than another so its best to benchmark with your specific use case if you can. These benchmarks just care about determining how fast the individual functions are.
-So how does our last approach do? Terrible. It took so long with the default settings of 1 million elements that I lowered it and it still took a while. Its clearly slower but why? Spoiler alert. I knew it'd be slower by a lot and unusable. Creating and deleting Memory is slow. Pointers aren't the best for this due to that. Specifically, each element is a pointer and you have to delete each and everyone of those which is bound to be slow so clear times are as slow as std::unordered_map. Random insert is also terrible (ignoring the fact that its incorrect even after fixing up the code so it'd work properly.). Its so terrible that it'd be best to scrape this idea altogether. Constantly comparing against keys that have already been inserted just to have to ditch the entire result just isn't good. But now we know a bit more so lets tackle those problems
+So how does our last approach do? Terrible. It took so long with the default settings of 1 million elements that I lowered it and it still took a while. Its clearly slower but why? Spoiler alert. I knew it'd be slower by a lot and unusable. Creating and deleting Memory is slow. Pointers aren't the best for this due to that. Specifically, each element is a pointer and you have to delete each and everyone of those which is bound to be slow so clear times are as slow as std::unordered_map. Random insert is also terrible (ignoring the fact that its incorrect even after fixing up the code so it'd work properly.). Constantly comparing against keys that have already been inserted just to have to ditch the entire result just isn't good. We also skipped a few extra optimizations with C++ but those will come later too. But now we know a bit more so lets tackle those problems
 
 # Approach 2
 First things first. Lets drop pointers if we can. We'd still like to have one of the benefits of pointers (being able to tell if it exists) but not the redirection and memory upkeep of them. C++ gives us std::optional which will do basically everything we need. This results in a simple change. Swap all pointers with std::optional. This results in much much faster clear times though this doesn't fix the other main issue which is searching speed. This is where it may make more sense to store the hash value along side the optional data. Due to the nature of how std::optional works, it likely is padded and stores a boolean or something alongside your data to determine if it exists. If we could take advantage of that value and say store the hash in that padded data and keep say the first bit as the valid bit, we'd have 63 bits worth of hash info which is more than enough for our application.
@@ -419,17 +419,17 @@ Those are just so you can skip some parts of destroying an object. Does this hel
 # Approach 3
 At this point, I was a bit disappointed. Sure clear times were better but insert time and random insert times were terrible. Seems like at this point, you should just use the default given hashmap. Then Robinhood hashing stepped in. To save ourselves the trouble of actually implementing it, I'm going to link to an existing one and talk about it as its not what we will ultimately go with due to there being better performance out there.
 
-At its core, robinhood hashing is just open addressing but it has 2 important things that make it better at least theoretically. In robinhood hashing, you keep track of how far any value is from their desired position. This is used when inserting. When you insert, in order to keep things fair, values that are really close to their desired location should be moved so that other values can be a bit closer. This moving around results in better average search times. Its called Robinhood hashing due to this idea of "take from the rich and give to the poor". This also comes with the benefits of not needing to maintain tombstones. Its possible to exit early with robinhood hashing before hitting an empty spot just based on how far values are from their desired spot. When deleting, you just need to slide values back (shifting them backwards into previous buckets) until you hit an empty bucket, or you move something into its desired spot. In fact with Robinhood hashing, its possible to get O(LogN) in the worst case for searching though you need to maintain much more data so this is not likely worth it.
+At its core, robinhood hashing is just open addressing but it has 2 important things that make it better at least theoretically. In robinhood hashing, you keep track of how far any value is from their desired position. This is used when inserting. When you insert, in order to keep things fair, values that are really close to their desired location should be moved so that other values can be a bit closer. This moving around results in better average search times. Its called Robinhood hashing due to this idea of "take from the rich and give to the poor". This also comes with the benefits of not needing to maintain tombstones. Its possible to exit early with robinhood hashing before hitting an empty spot just based on how far values are from their desired spot. When deleting, you just need to slide values back (shifting them backwards into previous buckets) until you hit an empty bucket, or you move something into its desired spot. In fact with Robinhood hashing, its possible to get O(LogN) in the worst case for searching though you need to maintain more data so this is not likely worth it.
 
-For testing, I attempted my own once and it worked out okay baring glitches but for reference you can use [this](https://github.com/martinus/robin-hood-hashing). When tested in the same benchmark, it performs about 1.8x faster to 2x faster depending on datatype, and if its a flatmap or not. Besides its commplexity, in order to get that kind of performance, you'd need more C++ specific functions which will come a bit later. For now just take note of the fact that traditional tombstones aren't needed here. Just need to know if a slot is empty or not but don't need to know anything about whether it was previously used.
+For testing, I attempted my own once and it worked out okay baring glitches but for reference you can use [this](https://github.com/martinus/robin-hood-hashing). When tested in the same benchmark, it performs about 1.8x faster to 2x faster depending on datatype, and if its a flatmap or not. Besides its complexity, in order to get that kind of performance, you'd need more C++ specific functions which will come a bit later. For now just take note of the fact that traditional tombstones aren't needed here. Just need to know if a slot is empty or not but don't need to know anything about whether it was previously used.
 
 
 # Approach 4
-During my search for fast hashmaps, I came across a [nice talk](https://www.youtube.com/watch?v=ncHmEUmJZf4) (thanks google). This talk drops a ton of useful information and pictures which you'll notice I have none of. Worth a watch just for that. Here in this talk, they approach building a hashmap a bit different in a way that does break standards (though this isn't necessarily a problem provided you know this). The main take aways from this however is that you can avoid checking the key by checking the hashes first and you can also avoid checking the entire hash if you just check the first byte. Assuming your hash is good, the first byte should be quite unique so you could attempt to use that as another filter. While I won't do it, there was the idea of using SSE to check multiple potential things at once. This in practice is not as good as it sounds since at the end of all this, you still need to extract the indicies that do have potential matching hashes. I tried and it was slower though it could be possible to be faster so I won't write it off for good.
+During my search for fast hashmaps, I came across a [nice C++ talk](https://www.youtube.com/watch?v=ncHmEUmJZf4) (thanks google). This talk drops a ton of useful information and pictures which you'll notice I have none of. Worth a watch just for that. Here in this talk, they approach building a hashmap a bit different in a way that does break standards (though this isn't necessarily a problem provided you know this). The main take aways from this is that you can avoid checking the key by checking the hashes first and you can also avoid checking the entire hash if you just check the first byte. Assuming your hash is good, the first byte should be quite unique so you could attempt to use that as another filter. While I won't do it, there was the idea of using SSE to check multiple potential things at once. This in practice is not as good as it sounds since at the end of all this, you still need to extract the indicies that do have potential matching hashes. I tried and it was slower though it could be possible to be faster so I won't write it off for good.
 
 The main thing of note is that we can store partial hash values and like before, we can store the entire hash so we never recompute them. We still have tombstones though so to be space efficient, lets store that information into our partial hash. That will leave us 7 bits of hash to work with but its fine.
 
-Next thing is to try to use more cache locality. Its the main reason of using partial hashes anyways so why not try to get more out of it. Normally we'd store hash data with our own data but what if our data is large? If so, we have to step over a lot of byte and potentially an entire cacheline every time we want to compare hashes. With this in mind, Separate our data from the hashmap specific stuff. So something like this:
+Next thing is to try to use more cache locality. Its the main reason of using partial hashes anyways so why not try to get more out of it. Normally we'd store hash data with our own data but what if our data is large? If so, we have to step over a lot of bytes and potentially an entire cacheline every time we want to compare hashes. With this in mind, Separate our data from the hashmap specific stuff. So something like this:
 
 ```C++
 template<typename K, typename V, typename HashFunction>
@@ -1025,12 +1025,507 @@ public:
 ```
 Notice that we need both to be transparent so we define a way to do this above. std::__is_transparent_v may not actually exist for you though. It may be called something different but it is possible to implement with existing meta programming functions. unordered_dense does this so if you need a more cross platform way of doing it, use that. Note that you don't really have to check if its transparent or not and can just assume you can do so if its your own code. It is required for standard containers for backwards compatibility but its not required for your own code especially considering we already broke standards with our delete function.
 
+
+# Multimap
+Assuming you want something like this, its pretty easy to add. You can just make a wrapper around this hashmap but use linked lists for the value. That way, you could easily delete from the linked list, references would stay valid, etc. The main issue being that you must make a wrapper and you introduce deletion and clear overhead which isn't quite desireable.
+
+A simpler solution may be to just allow duplicates to exist in the hashmap which makes insert/emplace easier. Doing this automatically solves all of the problems except 1. Really it does. Rehashes always keep the same order, deletion just deletes the oldest item and you still have all of the exact same properties as before.... but about that 1 problem. How do you delete a specific duplicate key? This may not always be something desired but it is something that the standard library provides and something you'd expect out of other hashtables too. Solving this is not particularly that easy but nor is it that difficult.
+
+There were 2 approaches to maintaining the hashtable based on what strategy was used for deletion. If you chose to keep tombstones, you'll have better iterator properties. Otherwise, you'll have worse iterator properties. 
+
+Basically, we need a new Custom Iterator for our HashTable. There are 2 things that we want to do. We want the same functionality we currently have so being able to iterate over all added things in the hashmap regardless of key. We also want to be able to grab an iterator through find, insert/emplace and modify the raw values (note that Key should not be modified). Normally, the current iterators becomme invalid once the internal vector resizes so insert and remove may invalidate all iterators or just 2.
+
+With new iterators, we can change those properties somewhat. The new iterators are invalidated on rehash only and invalidated on delete.... potentially. If backwards shifting is used, many iterators will be invalidated on erase and since hashes are intended to be pretty random, its unknown which iterators become invalid so assume all of them. Its possible that only one iterator is invalidated and its possible that all of them all invalidated.
+
+If tombstones are used, erasure will only invalidate one iterator. Insert still has the same properties of invalidating hashes upon rehash. This better mimics std::unordered_map which invalidates iterators on rehash and only one iterator on erase. With that in mind, this is a custom iterator and the necessary changes for the hashtable to allow multi map/set while using backwards shift deletion
+
+```C++
+template<typename Key, typename Value, bool MULTI = false, typename HashFunc = TestHashFunction<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
+    class SimpleHashTable;
+
+    template<typename Key, typename Value, typename HashFunc = TestHashFunction<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
+    using SimpleHashMap = SimpleHashTable<Key, Value, false, HashFunc, KeyEqual, BIG>;
+
+    template<typename Key, typename HashFunc = TestHashFunction<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
+    using SimpleHashSet = SimpleHashTable<Key, void, false, HashFunc, KeyEqual, BIG>;
+
+    template<typename Key, typename Value, typename HashFunc = TestHashFunction<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
+    using SimpleHashMultiMap = SimpleHashTable<Key, Value, true, HashFunc, KeyEqual, BIG>;
+
+    template<typename Key, typename HashFunc = TestHashFunction<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
+    using SimpleHashMultiSet = SimpleHashTable<Key, void, true, HashFunc, KeyEqual, BIG>;
+
+    //is_transparent stuff
+    template<typename Hash, typename KeyEqual>
+    constexpr bool both_transparent_v = std::__is_transparent_v<Hash> && std::__is_transparent_v<KeyEqual>;
+
+    template<typename Key, typename Value, bool MULTI, typename HashFunc, typename KeyEqual, bool BIG>
+    class SimpleHashBucketIterator
+    {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = std::conditional_t<std::is_same_v<void, Value>, Key, std::pair<Key, Value>>;
+        using difference_type = std::ptrdiff_t;
+        using pointer = value_type*;
+        using reference = value_type&;
+
+        
+        SimpleHashBucketIterator(){}
+        SimpleHashBucketIterator(SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* ptr, size_t bucketLocation)
+        {
+            tablePtr = ptr;
+            this->bucketLocation = bucketLocation;
+            if(bucketLocation != -1)
+            {
+                k = ptr->getKey(ptr->arr[ptr->redirectInfo[bucketLocation].second]);
+            }
+        }
+        ~SimpleHashBucketIterator(){}
+
+        auto operator++() -> SimpleHashBucketIterator&
+        {
+            tablePtr->getNext(*this);
+            return *this;
+        }
+        reference operator*() const
+        {
+            return tablePtr->arr[tablePtr->redirectInfo[bucketLocation].second];
+        }
+        pointer operator->() const
+        {
+            return &tablePtr->arr[tablePtr->redirectInfo[bucketLocation].second];
+        }
+
+        bool operator==(const SimpleHashBucketIterator& other) const
+        {
+            return bucketLocation == other.bucketLocation;
+        }
+        
+        bool operator!=(const SimpleHashBucketIterator& other) const
+        {
+            return bucketLocation != other.bucketLocation;
+        }
+    private:
+        friend SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
+        SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* tablePtr = nullptr;
+        uint64_t bucketLocation = -1;
+        Key k;
+    };
+
+
+
+    template<typename Key, typename Value, bool MULTI, typename HashFunc, typename KeyEqual, bool BIG>
+    class SimpleHashTable
+    {
+        using RedirectType = std::conditional_t<BIG, uint64_t, uint32_t>;
+        using HashRedirectPair = std::pair<RedirectType, RedirectType>;
+        using KeyValueType = std::conditional_t<std::is_same_v<void, Value>, Key, std::pair<Key, Value>>;
+        using Iterator = SimpleHashBucketIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
+    public:
+        template<typename P, typename H = HashFunc, typename KE = KeyEqual,
+        std::enable_if_t<both_transparent_v<H, KE>, bool> = true>
+        auto erase(const P& k)
+        {
+            return remove(find(k));
+        }
+        auto erase(const Key& k)
+        {
+            return remove(find(k));
+        }
+        auto erase(const Iterator& it)
+        {
+            return remove(it);
+        }
+        Iterator bucketEnd()
+        {
+            return Iterator(this, -1);
+        }
+    private:
+        auto remove(const Iterator& it)
+        {
+            if(UNLIKELY(arr.size() == 0))
+                return bucketEnd();
+            if(it == bucketEnd())
+                return bucketEnd();
+
+            uint64_t location = it.bucketLocation;
+            uint8_t currentPartialHash = getPartialHash(location);
+            RedirectType currentHash = getPartialHashEx(location);
+            
+            //if found, find the location of the last item in arr and swap that with our current spot
+
+            uint64_t lastSpotHash = hasher(getKey(arr.back()));
+            uint8_t lastSpotPartialHash = extractPartialHash(lastSpotHash);
+            RedirectType lastSpotExtraHash = extractPartialHashEx(lastSpotHash);
+            uint64_t lastSpotLocation = lastSpotHash % fastHashInfo.size();
+            
+            //it exists so we can skip the extra work of checking free slots.
+            //note that partialHash will ALWAYS have the valid bit set so you don't need to check if empty or free 
+            //  as if the partialHash at that location is invalid, the valid bit won't be set which means it won't be equal
+            while(true)
+            {
+                if(getPartialHash(lastSpotLocation) == lastSpotPartialHash) //fast path but 2 checks which may be unnecessary
+                {
+                    if(comparePartialHashEx(lastSpotLocation, lastSpotExtraHash))
+                    {
+                        if(getRedirectInfo(lastSpotLocation) == (arr.size()-1))
+                            break;
+                    }
+                }
+                lastSpotLocation = (lastSpotLocation+1) % fastHashInfo.size();
+            }
+
+            //set current location to be deleted
+            fastHashInfo[location] = 0;
+            
+            //swap data and pop back which completes the deletion
+            std::swap(arr[redirectInfo[lastSpotLocation].second], arr[redirectInfo[location].second]);
+
+            //swap locations too
+            redirectInfo[lastSpotLocation].second = redirectInfo[location].second;
+
+            //extra step. shift data back till we hit an empty spot or we hit a node that is in its desired spot
+            uint64_t previousLocation = location;
+            location = (location+1) % fastHashInfo.size();
+
+            uint64_t locationOfNextValidKey = SIZE_MAX;
+
+            while(!getLocationEmpty(location))
+            {
+                if(locationOfNextValidKey == SIZE_MAX)
+                {
+                    if(getPartialHash(location) == currentPartialHash)
+                        if(comparePartialHashEx(location, currentPartialHash))
+                            if(getKey( arr[getRedirectInfo(location)] ) == it.k)
+                                locationOfNextValidKey = location;
+                }
+                if(getDistanceFromDesiredSpot(location) > 0)
+                {
+                    if(locationOfNextValidKey == location)
+                        locationOfNextValidKey = previousLocation;
+
+                    fastHashInfo[previousLocation] = fastHashInfo[location];
+                    redirectInfo[previousLocation] = redirectInfo[location];
+                }
+                else
+                    break;
+
+                previousLocation = location;
+                location = (location+1) % fastHashInfo.size();
+            }
+            arr.pop_back();
+
+            if(locationOfNextValidKey != SIZE_MAX)
+                return Iterator(this, locationOfNextValidKey);
+            return bucketEnd();
+        }
+
+        template<bool K = MULTI>
+        typename std::enable_if<!K, bool>::type
+        checkForDuplicate(uint64_t intendedLocation, uint8_t partialHash, RedirectType extraHash, const Key& key)
+        {
+            if(getPartialHash(intendedLocation) == partialHash) //fast path but 2 checks which may be unnecessary
+            {
+                if(comparePartialHashEx(intendedLocation, extraHash))
+                {
+                    if(LIKELY( keyEqualFunc(getKey(arr[getRedirectInfo(intendedLocation)]), key) ))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        //If its a multimap, insert / emplace is allowed to insert multiple copies of the same key.
+        template<bool K = MULTI>
+        typename std::enable_if<K, bool>::type
+        checkForDuplicate(uint64_t intendedLocation, uint8_t partialHash, RedirectType extraHash, const Key& key)
+        {
+            return false;
+        }
+
+        
+        template<bool K = MULTI>
+        typename std::enable_if<K, void>::type
+        getNext(Iterator& bucket)
+        {
+            //key stored in iterator
+            if(UNLIKELY(arr.size() == 0))
+                bucket.bucketLocation = -1;
+            
+            uint64_t actualHash = hasher(bucket.k);
+            uint8_t partialHash = extractPartialHash(actualHash);
+            RedirectType extraHash = extractPartialHashEx(actualHash);
+            uint64_t location = bucket.bucketLocation+1;
+
+            while(!getLocationEmpty(location))
+            {
+                if(getPartialHash(location) == partialHash) //fast path but 2 checks which may be unnecessary
+                {
+                    if(comparePartialHashEx(location, extraHash))
+                    {
+                        if(LIKELY( keyEqualFunc(getKey(arr[getRedirectInfo(location)]), bucket.k) ))
+                        {
+                            bucket.bucketLocation = location;
+                            return;
+                        }
+                    }
+                }
+                location = (location+1) % fastHashInfo.size();
+            }
+            bucket.bucketLocation = -1;
+        }
+
+        template<bool K = MULTI>
+        typename std::enable_if<!K, void>::type
+        getNext(Iterator& bucket)
+        {
+            bucket.bucketLocation = -1;
+        }
+        
+        friend Iterator;
+    };
+```
+To keep things brief, the other changes are skipped but Insert, Emplace, etc. use checkForDuplicate now so that it can be removed if the table is a multi map/set. getNext() is the main important part where it will look for the next valid key modifying the iterator itself (though returning a new iterator is perfectly fine too. Probably better to do this). If it fails to find one, bucket location is set to -1 which will get cast to SIZE_MAX but it represents an invalid value. I chose to use a value that would always be invalid regardless of how the underlying data structure changes.
+
+Again, its important to note that if you choose to use full tombstones, iterators continue to be valid even after erase and with a few modifications, its possible to have more stable iterators that could sorta survive rehash. In order to survive rehashing, the iterator must store the redirection info. That means that rehashes do not completely break the iterator. You may not use that iterator for anything other than dereferencing data so no deleting or stepping forward as the bucket location is invalid. This remains true regardless of deletion strategy.
+
+Note that the standard invalidates iterators all on rehash and 1 iterator on erase. With tombstones, we have the same guarantees and with backwards shift deletion, we have slightly worse ones. Just as long as the programmer is aware of this, they can design code that is robust against iterator invalidation. Not knowing if an iterator is invalid is problematic but this is also on par with what std::unordered_map provides.
+
+Deletion in a multimap is simple. It follows a similar way with how [std::unordered_multimap](https://en.cppreference.com/w/cpp/container/unordered_multimap/erase.html) deletes things
+```C++
+int main()
+{
+    SimpleHashMultiMap<int, std::string> map = 
+    {
+        {1, "one"}, {1, "two"}, {1, "three"},
+        {4, "four"}, {5, "five"}, {6, "six"}
+    };
+
+    // Iterate over all keys that are one
+    for (auto it = map.find(1); it != map.bucketEnd();)
+    {
+        if (it->second != "two")
+            it = map.erase(it);
+        else
+            ++it;
+    }
+
+    //table should only have { {1, "two"}, {4, "four"}, {5, "five"}, {6, "six"} }
+    return 0;
+}
+```
+
+
+# The ACTUAL Implemented Multimap
+With all of the above work and after testing, I found that the map performs identical to the normal version when you only insert unique values. When you insert a lot of duplicates, the speed is quite slow. Now its still faster than std::unordered_multimap. In fact its like 3x faster with instant deletion but what I noticed is that if you used the normal non multimap version with std::list and just take care to insert into the list when you find the key, it was significantly faster with worse but very tolerable delete speeds.
+
+There is an optimization you can take that requires extra information to be stored. For each bucket, store how many values wanted to be in that specific spot (must also adjust this on delete). That way when inserting, you can skip that many slots avoiding a lot of extra checks. This helped but it ultimately couldn't compete with just using std::list.
+
+With this in mind, I sought out to make an implementation of multimap and to reduce duplicate code, just add it as apart of the normal table implementation. Not much code will be shown as the final implementation has a lot of meta programming functions but in order to achieve high speed, some significant changes were needed.
+
+```C++
+template<typename Key, typename Value, bool MULTI, typename HashFunc, typename KeyEqual, bool BIG>
+class SimpleHashTable
+{
+public:
+    using RedirectType = std::conditional_t<BIG, uint64_t, uint32_t>;
+    using HashRedirectPair = std::pair<RedirectType, RedirectType>;
+    using KeyValueType = std::conditional_t<std::is_same_v<void, Value>, Key, std::pair<Key, Value>>;
+    using KVStorageType = std::conditional_t<MULTI, std::list<KeyValueType>, KeyValueType>;
+    using Iterator = SimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
+
+    //STUFF
+
+private:
+
+    //STUFF
+
+    friend SimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
+
+    static const uint8_t VALID_BIT = 0x80;
+    const float MaxLoadBalance = 0.80;
+
+    std::vector<uint8_t> fastHashInfo; //0x00 == empty. 0x7F == deleted (only first bit empty)
+    std::vector<HashRedirectPair> redirectInfo; //redirect info + stored hash
+    std::vector<KVStorageType> arr;
+    std::vector<Key> extraKeyStorage;
+
+    //Typically in sync with arr but for a multimap, must also keep track of all the elements in each list. Ideally, size() = O(1)
+    size_t totalElements = 0;
+    uint64_t rehashCounter = 0;
+
+    HashFunc hasher;
+    KeyEqual keyEqualFunc;
+};
+```
+
+Take notice that we have a custom iterator again but this one is not the same as the previous one. Lets ignore it for now and come back to it. The main thing of note is the type KVStorageType, extraKeyStorage, totalElements, and rehashCounter.
+
+KVStorageType lets us store a std::list of the elements or just the raw elements directly. Then extraKeyStorage exists. This is for speed. When using a multimap, having to go into the list and dereference a pointer to get a key is slower than just getting the key directly so the Multimap will need to store an additional key for each unique key. This could be removed if performance is less of a concern. The performance difference is not bad either. Its not really worse than inserting only unique elements in testing though remember that benchmark isn't amazing.
+
+totalElements is required now as the total elements actually inserted is no longer just the number of elements in the data array. It could be higher if multiple of the same key are stored.
+
+rehashCounter is unique and only used for that custom iterator. Lets look at that custom iterator.
+
+```C++
+template<typename Key, typename Value, bool MULTI, typename HashFunc, typename KeyEqual, bool BIG>
+struct SimpleHashTableIterator
+{
+private:
+    using RedirectType = std::conditional_t<BIG, uint64_t, uint32_t>;
+    using HashRedirectPair = std::pair<RedirectType, RedirectType>;
+    using KeyValueType = std::conditional_t<std::is_same_v<void, Value>, Key, std::pair<Key, Value>>;
+
+public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = std::conditional_t<std::is_same_v<void, Value>, Key, std::pair<Key, Value>>;
+    using difference_type = std::ptrdiff_t;
+    using pointer = value_type*;
+    using reference = value_type&;
+
+    SimpleHashTableIterator(){}
+
+    SimpleHashTableIterator(SimpleHashTable<Key, Value, true, HashFunc, KeyEqual, BIG>* ptr, size_t index, bool all)
+    {
+        this->all = all;
+        this->ptr = ptr;
+        this->index = index;
+        if(ptr != nullptr)
+        {
+            this->rehashCounter = ptr->rehashCounter;
+            
+            if(index < ptr->size())
+                listIterator = ptr->arr[index].begin();
+        }
+    }
+    SimpleHashTableIterator(SimpleHashTable<Key, Value, false, HashFunc, KeyEqual, BIG>* ptr, size_t index, bool all)
+    {
+        this->all = all;
+        this->ptr = ptr;
+        this->index = index;
+        if(ptr != nullptr)
+        {
+            this->rehashCounter = ptr->rehashCounter;
+        }
+    }
+    
+    SimpleHashTableIterator(SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* ptr, size_t index, bool all, typename std::list<KeyValueType>::iterator desiredListIterator)
+    {
+        this->all = all;
+        this->ptr = ptr;
+        this->index = index;
+        this->listIterator = desiredListIterator;
+        if(ptr != nullptr)
+        {
+            this->rehashCounter = ptr->rehashCounter;
+        }
+    }
+
+    ~SimpleHashTableIterator(){}
+
+    //More Implementation
+    
+private:
+    //More Implementation
+    friend SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
+
+    bool all = false;
+    SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* ptr = nullptr;
+    uint64_t index;
+    
+    typename std::list<KeyValueType>::iterator listIterator;
+
+    //Allowing deletion of a specific element fast
+    uint64_t rehashCounter;
+    uint64_t bucketIndex = -1;
+};
+```
+Being a bit brief, notice how the iterator stores a pointer to the original object and the information needed to reference an item. This results in slower iterators but they remain more stable.
+
+listIterator is stored here but completely unused when you aren't working with multimaps. The addition of the all variable also allows the iterator (when configured correctly) to iterate over all elements over all list. Though in many cases, it will just iterate over the selected bucket.
+
+Also rehashCounter and bucketIndex are stored here too. You'd think if we use bucketIndex, surely this would be invalidated on rehash and you'd be kinda correct. This only makes the bucketIndex invalid though and we can check that if you compare the stored rehashCounter against the current rehashCounter.
+
+That bucketIndex is only used in deletion so it could be fast. If a rehash for some reason occurs and the iterator is still valid, you should still be able to delete based on the iterator so if their rehashCounters are off sync, the bucketIndex will be recomputed keeping most things the same. Also note that when incrementing any iterator, the bucketIndex will not be valid as they don't get updated so in those cases, the bucket index will need to be solved for again anyways.
+
+Note that this is only a forward iterator but nothing stops this from being a bidirectional iterator.
+
+So that is everything that changes right? Well I discovered that I don't actually benefit as much from some of the implementation approaches I took so I'll just highlight the changes to function signatures and what changed about the function if they aren't changed too much
+
+```C++
+public:
+    template<typename ...Args>
+    auto try_insert(const Key& key, Args&&... args)
+    {
+        return try_emplace(key, std::forward<Args>(args)...);
+    }
+
+    template<typename ...Args>
+    auto try_insert(Key&& key, Args&&... args)
+    {
+        return try_emplace(std::move(key), std::forward<Args>(args)...);
+    }
+
+    auto emplace(KeyValueType&& v){}
+        
+private:
+    template<bool M = MULTI, typename... Args>
+    typename std::enable_if<M, void>::type
+    attemptToAdd(Args&&... args)
+    {
+        arr.emplace_back(std::list<KeyValueType>());
+        arr.back().emplace_back(std::forward<Args>(args)...);
+        extraKeyStorage.push_back(getKey(arr.back()));
+    }
+
+    template<bool M = MULTI, typename... Args>
+    typename std::enable_if<!M, void>::type
+    attemptToAdd(Args&&... args)
+    {
+        arr.emplace_back(std::forward<Args>(args)...);
+    }
+    
+    template<bool M = MULTI, typename... Args>
+    typename std::enable_if<M, Iterator>::type
+    appendMultimap(uint64_t intendedLocation, Args&&... v)
+    {
+        uint64_t actualLocation = getRedirectInfo(intendedLocation);
+        arr[actualLocation].emplace_back(std::forward<Args>(v)...);
+        totalElements++;
+        
+        Iterator returnIt = Iterator(this, actualLocation, false, std::prev(arr[actualLocation].end()));
+        returnIt.bucketIndex = intendedLocation;
+        return returnIt;
+    }
+
+    template<bool M = MULTI, typename... Args>
+    typename std::enable_if<!M, Iterator>::type
+    appendMultimap(uint64_t intendedLocation, Args&&... v)
+    {
+        uint64_t actualLocation = getRedirectInfo(intendedLocation);
+        Iterator returnIt = Iterator(this, actualLocation, false);
+        returnIt.bucketIndex = intendedLocation;
+        return returnIt;
+    }
+```
+The main functions to pay attention to though many function are changed / adjusted even if only slightly. Emplace no longer takes in any potential values and therefore no longer needs to insert into the data array first before getting a key. This puts it on par with try_emplace in terms of performance and makes multimaps faster by avoiding unnecessary memory allocations. try_insert was added as a means to allow the same type of functionality though I can't really think of a scenario where I needed emplace to take in generic data types (I'm sure they exist).
+
+extraKeyStorage is only needed in multimaps and you have to actually append to those list in multimaps so functions are added for those than can be disabled / adjusted where necessary.
+
+The result? A multimap that is, at least according to benchmarks, 6x faster than std::unordered_multimap where you factor in creation time, clear time, and random insert time with duplicates. unordered_dense also does this but its not wrapped up in a neat package for multimaps. You'd need to add this manually.
+
 # Conclusions
 Unordered_dense is basically what we created here though its a little different. unordered_dense is certainly more polished and you should expect it to run a bit faster. An actually complete version of the hashmap this discusses is here in this repository and is also to be featured in my own library I use for C++ development [SMPL](https://github.com/Davidah121/SMPL). The objective here wasn't to beat unordered_dense or anything but to see how far you can go and understand WHY its like this.
 
-With this hashmap, rehashes don't affect the validity of any iterators but when the internal vector grows too large, it will invalidate all iterators. Also removing any element invalidates 2 things instead of one. The last thing added to the hashmap and the thing you are deleting. This may be problematic for you and if that is the case, you should pass pointers into this hashmap and then all your references will always be valid. This is why many hashmaps aren't too worried about invalidating references as you can force those by changing type. Its a bit of a pain though as you do have to free that memory so using smart pointers is advised. A simple fix to this is just to change how the data is interally stored. Maybe not using vector which can invalidate whenever it needs to grow but your own version which doesn't need to invalidate at all to grow (pretty sure unordered_dense offers this). You can also just use a Linked List or something as your redirection would just need to be a pointer. More than one approach which is the main benefit to doing something like this. You can now morph this into whatever you need and you have, hopefully, a good understanding of how it all fits together.
+With this hashmap, you have the choice of different iterator strategies depending on implementation. If you choose to ignore multimaps, iterators are invalidated whenever the internal vector storing elements has to resize and on erasure of any element, the last element in the internal vector also becomes invalid.
 
-Another note, without backwards shifting, its possible to trigger rehashing simply due to all the excess tombstones. You'd need to clean those up or take note at the rehashing stage that you don't need to actually double the number of buckets. This means its possible to rehash multiple times doing sommething like this (thanks again google):
+If you choose to have multimaps but use linked list, the same rules apply. If you implement multimaps in place and have tombstones, iterators are invalid upon rehash and only the element being deleted is invalidated when you erase something. If you use backwards shifting, rehashes invalidates all iterators and erasure invalidates many and potentially all valid iterators too.
+
+While none of these strategies are perfect, they aren't too far away from what std::unordered_map and std::unordered_multimap offer. Tombstones do offer what I would consider the best iterator properties matching what std::unordered_map and std::unordered_multimap offer and since you can control rehashing by setting the total number of buckets, you have more control over when your iterators become invalid.
+
+Another note, without backwards shifting, its possible to trigger rehashing simply due to all the excess tombstones. You'd need to clean those up or take note at the rehashing stage that you don't need to double the number of buckets. This means its possible to rehash multiple times doing sommething like this (thanks again google):
 ```C++
 void badFunction(HashMap& map)
 {
@@ -1045,10 +1540,13 @@ void badFunction(HashMap& map)
 
 Its worth noting even if you may not do this. Backwards shifting doesn't have this issue as a bucket doesn't have to note if it had been used and you won't be rehashing over used buckets but instead occupied buckets.
 
+The trade off of deletion strategy comes in the form of making insert,find,rehash slower while keeping more stable iterators on delete or making deletion slower with iterators that aren't stable at all upon deletion. Deletion with backwards shifting can hit O(N) easier if you are using a multimap and have many of the same key present but with tombstones, it is easier to hit O(1)
+
 Enough talking. Benchmarks
 
-Disclaimer: These numbers will vary upon hardware, OS, and what you are doing on your system and shouldn't be taken as if they are hard truth values.
+Disclaimer: These numbers will vary upon hardware, OS, and what you are doing on your system and shouldn't be taken as if they are hard truth values but instead of how they are relative to each other for the specific task
 
+### These benchmarks used std::string as the key and a 32 byte structure that is trivially destructable as its value
 | Hashmap Name       | Clear Time | In order Insert | Random Insert   | Search    | Remove     |
 |--------------------|------------|-----------------|-----------------|-----------|------------|
 | std::unordered_map | 0.062620650 | 0.167738690      | 0.074343670      | 0.000000300 | 0.001932380 |
@@ -1060,7 +1558,8 @@ Disclaimer: These numbers will vary upon hardware, OS, and what you are doing on
 | robinhood::unordered_flat_map | 0.005814300 | 0.113954350      | 0.054560710      | 0.000000129 | 0.001029440 |
 
 
-Notice that all of these hashmaps beat out the standard one though that doesn't mean that they have the same guarantees. These numbers are bound to have a bit of noise and its not as if the benchmarks are the best benchmarks in the world. There are bound to be cases were this implemented hashmap falls apart due to some C++ thing I didn't do which is why using unordered_dense is definitely the way to go.
+
+Notice that all of these hashmaps beat out the standard one though that doesn't mean that they have the same guarantees. These numbers are bound to have a bit of noise and its not as if the benchmarks are the best benchmarks in the world. There are bound to be cases were this implemented hashmap falls short due to some C++ thing I didn't do which is why using unordered_dense is definitely the way to go.
 
 What do these benchmarks even cover? It does record time to construct the hashmap but all of these don't do anything noteworthy in their constructors so its basically instant. Omitted because it would basically be 0 in each of them. 
 - Clear time records how long it takes to clear out 1 million elements that were added to it. 
@@ -1074,14 +1573,31 @@ What do these benchmarks even cover? It does record time to construct the hashma
 - Remove inserts 1 Million strings in the same was as In order Insert and then removes 10000 elements from that also in order.
     - This approach always deletes something so there is no early exit if the key was already deleted.
 
-As you can tell, all of these hashmaps (which can all be sets too) are faster and often by a lot. If you can deal with somme of the quirks associated with them, its worth trying them out. Otherwise, with all the things covered, you can surely change the internal data structures in the hashmap provided and get back some of those comforts you wish for. 
+For fun, these are the results for multimaps. Here since there is no multimap for unordered_dense or robinhood, those will be skipped but note that the performance if you have it store std::list<std::pair<K, V>>, its very comparable:
+
+### These benchmarks used size_t as the key and a 32 byte structure that is trivially destructable as its value
+| Hashmap Name       | In Order Insert Clear Time | Random Insert Clear Time | In order Insert | Random Insert   | Search    | Remove     |
+|--------------------|----------------------------|--------------------------|-----------------|-----------------|-----------|------------|
+| std::unordered_multimap | 0.058221820           | 0.081144950              | 0.117551020     | 0.860157620     | 0.000000142 | 0.000000164|
+| smpl::SimpleHashMultiMap | 0.023494120          | 0.075687500              | 0.077554960     | 0.059063060     | 0.000000129 | 0.000000150|
+| smpl::SimpleHashMultiMap (Inplace insertion) | 0 | 0                       | 0.071669810     | 0.276171670     | N/A         | N/A        |
+
+
+These benchmarks are identical to the above except that deletion doesn't quite work the same way so its not quite fair to compare the inplace version with the other 2. Deletion for unordered_map removes ALL duplicate keys. SimpleHashMultiMap does the same but the inplace insertion method does not do this. Also note that even though the inplace insertion solution has faster search time, the iteration time is going to be slower based on how data was inserted into the hashmap itself (along with iterators having different properties).
+
+Here, both multimap still out do the std::unordered_multimap however, the search and remove times are quite comparable. They fluctuate so running with more iterations is necessary to remove testing variance. I changed to 100 iterations to test just search and remove though more is likely needed.
+
+Note that making a psuedo multimap with unordered_dense is slightly faster but is lacking a custom iterator implementation. Also these are using size_t as the key so clear times are instant / near instant. If you use a non trivially destructable key like the previous testing, deletion is no longer instant 
+
+
+As you can tell, all of these hashmaps (which can all be sets too) are faster and often by a lot. If you can deal with some of the quirks associated with them, its worth trying them out. Otherwise, with all the things covered, you can surely change the internal data structures in the hashmap provided and get back some of those comforts you wish for. 
 
 If you want better benchmarks, check these 2 out:
 - [Benchmark 2019](https://martin.ankerl.com/2019/04/01/hashmap-benchmarks-01-overview/)
 - [Benchmark 2022](https://martin.ankerl.com/2022/08/27/hashmap-bench-01/#result-analysis)
 
-As for memory usage, well I didn't test the memory usage for all maps but I can talk about the memory usage of the current implemented map created. Nine or 17 bytes are used per bucket depending on if it is defined as BIG or not. The map only ever rehashes at past 80% fill so lets say we calculate this for 1 million elements. We only care about overhead associated with the hashmap and therefore the Key and or Value types stored won't affect anything. We are comparing against std::vector where you'd store those things and use the naive O(N) linear search approach. If comparing to that, you'd have 1.2 million buckets in total since you have 1 million objects and you are assuming a mostly filled hashmap (you can force this too by allocating the exact nummber of buckets needed).
-With that in mine, its 
+As for memory usage, well I didn't test the memory usage for all maps but I can talk about the memory usage of the current implemented map created. 9 or 17 bytes are used per bucket depending on if it is defined as BIG or not. The map only ever rehashes at past 80% fill so lets say we calculate this for 1 million elements. We only care about overhead associated with the hashmap and therefore the Key and or Value types stored won't affect anything. We are comparing against std::vector where you'd store those things and use the naive O(N) linear search approach. If comparing to that, you'd have 1.2 million buckets in total since you have 1 million objects and you are assuming a mostly filled hashmap (you can force this too by allocating the exact number of buckets needed).
+With that in mind, its 
 - 10.8 MBytes if its not BIG
 - 20.4 MBytes if it is BIG
 
@@ -1090,12 +1606,15 @@ The data stored in the benchmark is 32 bytes in size and the key is 8 bytes so a
 
 So in total its upto 60.4 MBytes (potentially more if you don't manually allocate the total needed buckets to have it more tightly fit). Note that std::vector overhead isn't included here and that is because it is possible to tightly fit that as well.
 
-This is quite ideal compared to previous attempts as with a Balanced Binary Search Tree (assuming no padding) would need 25 bytes per tree node (need one boolean for red-black node) and 40 bytes for the KeyValuePair (assuming we still store both key and value). So 65 MBytes in total.
+This is quite ideal compared to previous attempts as with a Balanced Binary Search Tree (assuming no padding) would need 25 bytes per tree node (need one boolean for red-black node) and 40 bytes for the KeyValuePair (assuming we still store both key and value). So 65 MBytes in total. Note that if a multimap implementation is used, add 16 bytes per element added and add the size of the key for each unique key.
+If you assume all unique keys
+- 24 MBytes
+For a total of 74.8 MBytes if its not BIG and 84.4 if it is. Note that using a Balance Binary Search Tree with duplicates would also need to factor in the extra book keeping by std::list (and really any linked list) so add 16-24 MBytes there depending on how you chose to store it and if you store a version of the key separately for faster searching.
 
 As for the std::unordered_map, its a bit confusing but the leading idea is that it isn't very good. I used [this](https://stackoverflow.com/questions/25375202/how-to-measure-the-memory-usage-of-stdunordered-map) to approximate the total so just know its not 100% accurate.
-- 111.5 MBytes
+- ~111.5 MBytes
 
-This value may be larger or smaller depending on implementation and things outside of the programmers control but the general problem is that its about 2x bigger than our implementation and that Balanced Binary Search Tree. That is a huge overhead compared to just storing the data directly (which is 40 MBytes if tightly fit). We are using 1 million elements so its not as bad if you use a lot less and its terrible if you are using far more.
+This value may be larger or smaller depending on implementation and things outside of the programmers control but the general problem is that its almost 2x bigger than our implementation and that Balanced Binary Search Tree. That is a huge overhead compared to just storing the data directly (which is 40 MBytes if tightly fit). We are using 1 million elements so its not as bad. If you use a lot less elements its perfectly fine and its terrible if you are using far more.
 
 This should cover everything I set out to do. As for me, I'm satisfied. I even got to use the complicated C++ Meta programming stuff and I got to create an amazing hashmap that I'll personally be using in the future.
 
@@ -1109,3 +1628,4 @@ This should cover everything I set out to do. As for me, I'm satisfied. I even g
 - [std::unordered_map size approximation](https://stackoverflow.com/questions/25375202/how-to-measure-the-memory-usage-of-stdunordered-map)
 - [ankerl's Benchmark 2019](https://martin.ankerl.com/2019/04/01/hashmap-benchmarks-01-overview/)
 - [ankerl's Benchmark 2022](https://martin.ankerl.com/2022/08/27/hashmap-bench-01/#result-analysis)
+- [std::unordered_multimap::erase](https://en.cppreference.com/w/cpp/container/unordered_multimap/erase.html)
