@@ -3,7 +3,7 @@ Hashtables are often at the core of many software development solutions as they 
 
 Turns out its possible to have more control over that Average, the memory overhead of hashtables can be lower than a binary search tree, and even when you need more comparisons in a hashtable, you have better cache locality making it so performance can still be better. So how efficient can you get a hashtable?
 
-The motivation for this is simple. I need a better approach to grabbing values based on keys. Sorting isn't necessarily an issue as for me, I'm just sorting 64 bit numbers but in practice, I need to remove things from this list somewhat often and reference that list often too. I also would like to have limited overhead. All of this to make my current Smart Pointer System more efficient. I don't particularly care if it beats out the standard library approach but if it is faster than it currently is, that is a win. If it comes with less overhead memory overhead than Binary Search Trees, that is also a win. If a single pointer requires 32 bytes of extra information, that is a lot. Adding in another 24 bytes doesn't make it any better.
+The motivation for this is simple. I need a better approach to grabbing values based on keys. Sorting isn't necessarily an issue as for me, I'm just sorting 64 bit numbers but in practice, I need to remove things from this list somewhat often and reference that list often too. I also would like to have limited overhead. All of this to make my current Smart Pointer System more efficient. I don't particularly care if it beats out the standard library approach in everyway but if it is faster than it currently is, that is a win. If it comes with less overhead memory overhead than Binary Search Trees, that is also a win. If a single pointer requires 32 bytes of extra information, that is a lot. Adding in another 24 bytes doesn't make it any better.
 
 TLDR; this is building up to something very similar to [unordered_dense](https://github.com/martinus/unordered_dense) which you should use instead but its valuable to understand the process to get there too.
 If you want, you can skip to conclusion to see the benchmarks
@@ -1631,4 +1631,5 @@ This should cover everything I set out to do. As for me, I'm satisfied. I even g
 - [std::unordered_map size approximation](https://stackoverflow.com/questions/25375202/how-to-measure-the-memory-usage-of-stdunordered-map)
 - [ankerl's Benchmark 2019](https://martin.ankerl.com/2019/04/01/hashmap-benchmarks-01-overview/)
 - [ankerl's Benchmark 2022](https://martin.ankerl.com/2022/08/27/hashmap-bench-01/#result-analysis)
+
 - [std::unordered_multimap::erase](https://en.cppreference.com/w/cpp/container/unordered_multimap/erase.html)
