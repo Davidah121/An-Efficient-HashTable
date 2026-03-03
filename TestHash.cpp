@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cxxabi.h>
 
-#include "ImportantInclude.h"
+#include "SimpleHashTable_Hash.h"
 #include "SimpleHashTable.h"
 
 #include <map>
@@ -206,44 +206,35 @@ void benchmarkAllOps()
     printf("\t\tUnique Items = %llu\n", defaultMap.size());
 
     fillWithIterableDataRef(defaultMap);
+	
     
-
     size_t avgSearchTime = 0;
-    for(int i=0; i<100; i++)
+    for(int i=0; i<MILLION; i++)
     {
         avgSearchTime += benchmarkFunction(search<T>, defaultMap, collectedData);
+		collectedData.clear();
     }
-    printf("\tAverage Search Time = %llu\n", avgSearchTime/100);
-//     printf("%llu\n", collectedData.size());
-//     if(!collectedData.empty())
-//         printf("%llu\n", collectedData.front().sizeInBytes);
+    printf("\tAverage Search Time = %llu\n", avgSearchTime/MILLION);
 
     size_t avgRemoveTime = benchmarkDeleteTime(defaultMap);
     printf("\tAverage Remove Time = %llu\n", avgRemoveTime);
 }
 
-template<typename T>
-bool checkingIfValid()
-{
-    return std::__is_transparent_v<T>;
-}
-
 int main()
 {
-//     printf("STD MAPS:______________________\n");
-//     benchmarkAllOps<std::unordered_map<size_t, MemInfo>>(); //(baseline)
+    printf("STD MAPS:______________________\n");
+    benchmarkAllOps<std::unordered_map<size_t, MemInfo>>(); //(baseline)
     
-//     printf("TEST MAPS:______________________\n");
-//     benchmarkAllOps<smpl::SimpleHashMap<size_t, MemInfo, std::hash<size_t>>>();
+    printf("TEST MAPS:______________________\n");
+    benchmarkAllOps<smpl::SimpleHashMap<size_t, MemInfo, std::hash<size_t>>>();
+	
+    // std::unordered_map<size_t, MemInfo> map = std::unordered_map<size_t, MemInfo>();
+    // fillWithIterableDataRef<std::unordered_map<size_t, MemInfo>>(map);
 
+    // double totalSize = (map.size() * (sizeof(std::unordered_map<size_t, MemInfo>::value_type) + sizeof(void*)) + // data list
+	// 	map.bucket_count() * (sizeof(void*) + sizeof(size_t))) * 1.5;
 
-    std::unordered_map<size_t, MemInfo> map = std::unordered_map<size_t, MemInfo>();
-    fillWithIterableDataRef<std::unordered_map<size_t, MemInfo>>(map);
-
-    double totalSize = (map.size() * (sizeof(std::unordered_map<size_t, MemInfo>::value_type) + sizeof(void*)) + // data list
- map.bucket_count() * (sizeof(void*) + sizeof(size_t))) * 1.5;
-
- printf("Expected Total Size: %.3f\n", totalSize);
+	// printf("Expected Total Size for unordered_map: %.3f\n", totalSize);
 
     return 0;
 }

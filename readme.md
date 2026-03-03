@@ -1546,18 +1546,21 @@ Enough talking. Benchmarks
 
 Disclaimer: These numbers will vary upon hardware, OS, and what you are doing on your system and shouldn't be taken as if they are hard truth values but instead of how they are relative to each other for the specific task
 
-### These benchmarks used std::string as the key and a 32 byte structure that is trivially destructable as its value
-| Hashmap Name       | Clear Time | In order Insert | Random Insert   | Search    | Remove     |
-|--------------------|------------|-----------------|-----------------|-----------|------------|
-| std::unordered_map | 0.062620650 | 0.167738690      | 0.074343670      | 0.000000300 | 0.001932380 |
-| smpl::SimpleHashTable (no backwards shift) |  0.001955050  | 0.074587850 | 0.064974890  | 0.000000193 | 0.000934600 |
-| smpl::SimpleHashTable | 0.002003420 | 0.072411350      | 0.062643930      | 0.000000197 | 0.001016310 |
-| ankerl::unordered_dense | 0.002513210 | 0.067642640      | 0.082310160      | 0.000000159 | 0.000807790 |
-| ankerl::unordered_dense_segmented | 0.003142450 | 0.066112510      | 0.058892820      | 0.000000203 | 0.001060870 |
-| robinhood::node_map | 0.012487270 | 0.110946770      | 0.071795110      | 0.000000207 | 0.001516520 |
-| robinhood::unordered_flat_map | 0.005814300 | 0.113954350      | 0.054560710      | 0.000000129 | 0.001029440 |
+### These benchmarks used std::string as the key and a 32 byte structure that is trivially destructable as its value. 100 iterations
 
+#### NEWER BENCHMARKS
+| Hashmap Name       | Clear Time | Random Clear Time | In order Insert | Random Insert   | Search    | Remove     |
+|--------------------|------------|-------------------|-----------------|-----------------|-----------|------------|
+| std::unordered_map | 0.054098161 | 0.000803468 | 0.119160767 | 0.060375320 | 0.000000081 | 0.000000155 |
+| smpl::SimpleHashTable | 0.002123916 | 0.000022448 | 0.063534452 | 0.049051729 | 0.000000049 | 0.000000076 |
+| ankerl::unordered_dense | 0.002586656 | 0.000607927 | 0.053142968 | 0.049052183 | 0.000000048 | 0.000000062 |
+| ankerl::unordered_dense_segmented | 0.003074640 | 0.000644016 | 0.052255512 | 0.057540908 | 0.000000058 | 0.000000079 |
+| robinhood::node_map | 0.011814384 | 0.001297396 | 0.102819642 | 0.062919741 | 0.000000057 | 0.000000131 |
+| robinhood::unordered_flat_map | 0.005707878 | 0.000929507 | 0.108942996 | 0.049280971 | 0.000000046 | 0.000000096 |
 
+Quick note: This used to list the times for a tombstone version without backwards shift deletion. I did not retest it but it performed about 3% worse on all insertion task, 2.1% better on search, and about 8% better on remove.
+
+std::unordered_map does NOT use std::hash as it uses the identity hash for numbers which is just a bad hash. It instead uses rapid hash just like SimpleHashTable. The other maps use their default hash function. Sure you could have all of them use the identity hash too or all use the same hash function too. I chose this method as it is likely how a developer will chose to use the map out of the box. wyhash is also very similar in performance to rapidhash considering rapidhash is designed to be the upgraded version of wyhash.
 
 Notice that all of these hashmaps beat out the standard one though that doesn't mean that they have the same guarantees. These numbers are bound to have a bit of noise and its not as if the benchmarks are the best benchmarks in the world. There are bound to be cases were this implemented hashmap falls short due to some C++ thing I didn't do which is why using unordered_dense is definitely the way to go.
 
@@ -1575,11 +1578,11 @@ What do these benchmarks even cover? It does record time to construct the hashma
 
 For fun, these are the results for multimaps. Here since there is no multimap for unordered_dense or robinhood, those will be skipped but note that the performance if you have it store std::list<std::pair<K, V>>, its very comparable:
 
-### These benchmarks used size_t as the key and a 32 byte structure that is trivially destructable as its value
+### These benchmarks used size_t as the key and a 32 byte structure that is trivially destructable as its value. 100 iterations
 | Hashmap Name       | In Order Insert Clear Time | Random Insert Clear Time | In order Insert | Random Insert   | Search    | Remove     |
 |--------------------|----------------------------|--------------------------|-----------------|-----------------|-----------|------------|
-| std::unordered_multimap | 0.058221820           | 0.081144950              | 0.117551020     | 0.860157620     | 0.000000142 | 0.000000164|
-| smpl::SimpleHashMultiMap | 0.023494120          | 0.075687500              | 0.077554960     | 0.059063060     | 0.000000129 | 0.000000150|
+| std::unordered_multimap | 0.061485461           | 0.085785920              | 0.104064487     | 1.086142850     | 0.000000033 | 0.000000163|
+| smpl::SimpleHashMultiMap | 0.025469959          | 0.084360004              | 0.077554960     | 0.059063060     | 0.000000030 | 0.000000149|
 | smpl::SimpleHashMultiMap (Inplace insertion) | 0 | 0                       | 0.071669810     | 0.276171670     | N/A         | N/A        |
 
 
@@ -1614,7 +1617,7 @@ For a total of 74.8 MBytes if its not BIG and 84.4 if it is. Note that using a B
 As for the std::unordered_map, its a bit confusing but the leading idea is that it isn't very good. I used [this](https://stackoverflow.com/questions/25375202/how-to-measure-the-memory-usage-of-stdunordered-map) to approximate the total so just know its not 100% accurate.
 - ~111.5 MBytes
 
-This value may be larger or smaller depending on implementation and things outside of the programmers control but the general problem is that its almost 2x bigger than our implementation and that Balanced Binary Search Tree. That is a huge overhead compared to just storing the data directly (which is 40 MBytes if tightly fit). We are using 1 million elements so its not as bad. If you use a lot less elements its perfectly fine and its terrible if you are using far more.
+This value may be larger or smaller depending on implementation and things outside of the programmers control but the general problem is that its almost 2x bigger than our implementation and that Balanced Binary Search Tree. That is a huge overhead compared to just storing the data directly (which is 40 MBytes if tightly fit). We are using 1 million elements so its not as bad. If you use a lot less elements its perfectly fine and its terrible if you are using far more. Since this requires tightly fitting to get these kinds of results, the hash table offers the option to do that.
 
 This should cover everything I set out to do. As for me, I'm satisfied. I even got to use the complicated C++ Meta programming stuff and I got to create an amazing hashmap that I'll personally be using in the future.
 
