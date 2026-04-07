@@ -176,6 +176,17 @@ size_t benchmarkDeleteTime(T& map)
 }
 
 template<typename T>
+size_t iterateOverMap(T& map)
+{
+	std::vector<MemInfo> buffer;
+	for(auto& v : map)
+	{
+		buffer.push_back(v.second);
+	}
+	return buffer.size();
+}
+
+template<typename T>
 void benchmarkAllOps()
 {
     std::vector<MemInfo> collectedData;
@@ -206,6 +217,9 @@ void benchmarkAllOps()
     printf("\t\tUnique Items = %llu\n", defaultMap.size());
 
     fillWithIterableDataRef(defaultMap);
+
+	size_t iterationTime = benchmarkFunction(iterateOverMap<T>, defaultMap);
+	printf("\tTime to iterate over all elements = %llu\n", iterationTime);
 	
     
     size_t avgSearchTime = 0;
@@ -223,10 +237,10 @@ void benchmarkAllOps()
 int main()
 {
     printf("STD MAPS:______________________\n");
-    benchmarkAllOps<std::unordered_map<size_t, MemInfo>>(); //(baseline)
+    benchmarkAllOps<std::unordered_multimap<size_t, MemInfo, smpl::RapidHash<size_t>>>(); //(baseline)
     
     printf("TEST MAPS:______________________\n");
-    benchmarkAllOps<smpl::SimpleHashMap<size_t, MemInfo, std::hash<size_t>>>();
+    benchmarkAllOps<smpl::SimpleHashMultiMap<size_t, MemInfo>>();
 	
     // std::unordered_map<size_t, MemInfo> map = std::unordered_map<size_t, MemInfo>();
     // fillWithIterableDataRef<std::unordered_map<size_t, MemInfo>>(map);
@@ -235,7 +249,6 @@ int main()
 	// 	map.bucket_count() * (sizeof(void*) + sizeof(size_t))) * 1.5;
 
 	// printf("Expected Total Size for unordered_map: %.3f\n", totalSize);
-
     return 0;
 }
 

@@ -19,6 +19,8 @@
 
 #ifndef LIKELY
 #define LIKELY(x)      __builtin_expect(!!(x), 1)
+#endif
+#ifndef UNLIKELY
 #define UNLIKELY(x)    __builtin_expect(!!(x), 0)
 #endif
 
@@ -28,9 +30,17 @@
 #define SHTABLE_CONSTEXPR
 #endif
 
+#ifndef __min
+#define __min(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#ifndef __max
+#define __max(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+
 namespace smpl
 {
-	template<typename Key, typename Value, bool MULTI, typename HashFunc = RapidHash<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
+	template<typename Key, typename Value, bool MULTI, class HashFunc = RapidHash<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
 	class SimpleHashTable;
 
 	template<typename Key, typename Value, typename HashFunc = RapidHash<Key>, typename KeyEqual = std::equal_to<Key>, bool BIG = false>
@@ -67,13 +77,13 @@ namespace smpl
 
 		SimpleHashTableIterator(){}
 		
-		SimpleHashTableIterator(SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* ptr, size_t index, size_t bucketIndex, size_t rehashCounter, bool all, typename std::list<KeyValueType>::iterator desiredListIterator)
+		SimpleHashTableIterator(SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* ptr, size_t index, size_t bucketIndex, size_t critChangeCounter, bool all, typename std::list<KeyValueType>::iterator desiredListIterator)
 		{
 			this->all = all;
 			this->ptr = ptr;
 			this->index = index;
 			this->bucketIndex = bucketIndex;
-			this->rehashCounter = rehashCounter;
+			this->criticalChangeCounter = critChangeCounter;
 			this->listIterator = desiredListIterator;
 		}
 
@@ -215,7 +225,7 @@ namespace smpl
 		uint64_t index;
 		
 		//Allowing deletion of a specific element fast
-		uint64_t rehashCounter;
+		uint64_t criticalChangeCounter;
 		uint64_t bucketIndex = -1;
 	};
 
@@ -236,17 +246,17 @@ namespace smpl
 
 		ConstSimpleHashTableIterator(){}
 
-		ConstSimpleHashTableIterator(const SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* ptr, size_t index, size_t bucketIndex, size_t rehashCounter, bool all, typename std::list<KeyValueType>::const_iterator desiredListIterator)
+		ConstSimpleHashTableIterator(const SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>* ptr, size_t index, size_t bucketIndex, size_t critChangeCounter, bool all, typename std::list<KeyValueType>::const_iterator desiredListIterator)
 		{
 			this->all = all;
 			this->ptr = ptr;
 			this->index = index;
 			this->bucketIndex = bucketIndex;
-			this->rehashCounter = rehashCounter;
+			this->criticalChangeCounter = critChangeCounter;
 			this->listIterator = desiredListIterator;
 			if(ptr != nullptr)
 			{
-				this->rehashCounter = ptr->rehashCounter;
+				this->criticalChangeCounter = ptr->criticalChangeCounter;
 			}
 		}
 		
@@ -256,7 +266,7 @@ namespace smpl
 			this->listIterator = other.listIterator;
 			this->bucketIndex = other.bucketIndex;
 			this->index = other.index;
-			this->rehashCounter = other.rehashCounter;
+			this->criticalChangeCounter = other.criticalChangeCounter;
 			this->ptr = other.ptr;
 		}
 
@@ -306,7 +316,7 @@ namespace smpl
 		typename std::enable_if<!M, ConstSimpleHashTableIterator&>::type
 		operator++() const
 		{
-			return ConstSimpleHashTableIterator(ptr, this->index+1, -1, this->rehashCounter, this->all, listIterator);
+			return ConstSimpleHashTableIterator(ptr, this->index+1, -1, this->criticalChangeCounter, this->all, listIterator);
 		}
 		
 		template<bool M = MULTI>
@@ -337,6 +347,64 @@ namespace smpl
 			return &ptr->arr[this->index];
 		}
 
+				template<bool M = MULTI>
+		typename std::enable_if<M, bool>::type
+		operator==(const SimpleHashTableIterator<Key, Value, M, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index == other.index && listIterator == other.listIterator;
+		}
+		
+		template<bool M = MULTI>
+		typename std::enable_if<M, bool>::type
+		operator!=(const SimpleHashTableIterator<Key, Value, M, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index != other.index || listIterator != other.listIterator;
+		}
+
+		template<bool M = MULTI>
+		typename std::enable_if<!M, bool>::type
+		operator==(const SimpleHashTableIterator<Key, Value, M, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index == other.index;
+		}
+
+		template<bool M = MULTI>
+		typename std::enable_if<!M, bool>::type
+		operator!=(const SimpleHashTableIterator<Key, Value, M, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index != other.index;
+		}
+
+		
+		//ConstHashTableIterator is the same thing
+		template<bool M = MULTI>
+		typename std::enable_if<M, bool>::type
+		operator==(const ConstSimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index == other.index && listIterator == other.listIterator;
+		}
+		
+		template<bool M = MULTI>
+		typename std::enable_if<M, bool>::type
+		operator!=(const ConstSimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index != other.index || listIterator != other.listIterator;
+		}
+
+		template<bool M = MULTI>
+		typename std::enable_if<!M, bool>::type
+		operator==(const ConstSimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index == other.index;
+		}
+
+		template<bool M = MULTI>
+		typename std::enable_if<!M, bool>::type
+		operator!=(const ConstSimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>& other) const
+		{
+			return index != other.index;
+		}
+		
 	protected:
 		friend SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
 
@@ -347,7 +415,7 @@ namespace smpl
 		uint64_t index;
 		
 		//Allowing deletion of a specific element fast
-		uint64_t rehashCounter;
+		uint64_t criticalChangeCounter;
 		uint64_t bucketIndex = -1;
 	};
 
@@ -365,7 +433,7 @@ namespace smpl
 		using Iterator = SimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
 		using ConstIterator = ConstSimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
 		
-		static const size_t MINIMUM_BUCKETS = 256;
+		static const size_t MINIMUM_BUCKETS = 32;
 
 
 		/**
@@ -425,7 +493,7 @@ namespace smpl
 			
 			for(auto it = defaultValues.begin(); it!=defaultValues.end(); ++it)
 			{
-				constEmplace(std::move(*it));
+				constInsert(std::move(*it));
 			}
 		}
 
@@ -442,28 +510,28 @@ namespace smpl
 		* 
 		* @param other 
 		*/
-		SimpleHashTable(const SimpleHashTable<Key, Value, MULTI>& other)
+		SimpleHashTable(const SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>& other)
 		{
 			arr = other.arr;
 			extraKeyStorage = other.extraKeyStorage;
 			fastHashInfo = other.fastHashInfo;
 			redirectInfo = other.redirectInfo;
 			totalElements = other.totalElements;
-			rehashCounter = other.rehashCounter;
+			criticalChangeCounter = other.criticalChangeCounter;
 		}
 		/**
 		* @brief Copy Assign a new Hash Table object
 		* 
 		* @param other 
 		*/
-		void operator=(const SimpleHashTable<Key, Value, MULTI>& other)
+		void operator=(const SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>& other)
 		{
 			arr = other.arr;
 			extraKeyStorage = other.extraKeyStorage;
 			fastHashInfo = other.fastHashInfo;
 			redirectInfo = other.redirectInfo;
 			totalElements = other.totalElements;
-			rehashCounter = other.rehashCounter;
+			criticalChangeCounter = other.criticalChangeCounter;
 		}
 
 		/**
@@ -472,14 +540,14 @@ namespace smpl
 		* 
 		* @param other 
 		*/
-		SimpleHashTable(SimpleHashTable<Key, Value, MULTI>&& other) noexcept
+		SimpleHashTable(SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>&& other) noexcept
 		{
 			arr = std::move(other.arr);
 			extraKeyStorage = std::move(other.extraKeyStorage);
 			fastHashInfo = std::move(other.fastHashInfo);
 			redirectInfo = std::move(other.redirectInfo);
 			totalElements = std::move(other.totalElements);
-			rehashCounter = std::move(other.rehashCounter);
+			criticalChangeCounter = std::move(other.criticalChangeCounter);
 		}
 		
 		/**
@@ -488,14 +556,14 @@ namespace smpl
 		* 
 		* @param other 
 		*/
-		void operator=(SimpleHashTable<Key, Value, MULTI>&& other) noexcept
+		void operator=(SimpleHashTable<Key, Value, MULTI, HashFunc, KeyEqual, BIG>&& other) noexcept
 		{
 			arr = std::move(other.arr);
 			extraKeyStorage = std::move(other.extraKeyStorage);
 			fastHashInfo = std::move(other.fastHashInfo);
 			redirectInfo = std::move(other.redirectInfo);
 			totalElements = std::move(other.totalElements);
-			rehashCounter = std::move(other.rehashCounter);
+			criticalChangeCounter = std::move(other.criticalChangeCounter);
 		}
 
 		/**
@@ -509,7 +577,7 @@ namespace smpl
 			arr.clear();
 			extraKeyStorage.clear();
 			totalElements = 0;
-			rehashCounter++;
+			criticalChangeCounter++;
 		}
 
 		/**
@@ -525,7 +593,7 @@ namespace smpl
 			arr.clear();
 			extraKeyStorage.clear();
 			totalElements = 0;
-			rehashCounter++;
+			criticalChangeCounter++;
 		}
 
 		//enable if map meaning that Value is not void.
@@ -539,13 +607,14 @@ namespace smpl
 		* @param k 
 		* @return Value& 
 		*/
-		template<typename Q = Value, std::enable_if<!std::is_same<void, Q>::value, bool> = true>
-		Value& operator[](const Key& k)
+		template<typename Q = KeyValueType, typename std::enable_if<!std::is_same<Key, Q>::value, bool>::type = true>
+		auto& operator[](const Key& k)
 		{
-			return try_emplace(k)->second;
+			return tryInsert(k)->second;
 		}
-		template<typename Q = Value, std::enable_if<!std::is_same<void, Q>::value, bool> = true>
-		Value& operator[](const Key& k) const
+
+		template<typename Q = KeyValueType, typename std::enable_if<!std::is_same<Key, Q>::value, bool>::type = true>
+		const auto& operator[](const Key& k) const
 		{
 			return find(k)->second;
 		}
@@ -564,13 +633,13 @@ namespace smpl
 		*/
 		template<typename P, typename Q = Value, typename H = HashFunc, typename KE = KeyEqual,
 		std::enable_if<!std::is_same<void, Q>::value && both_transparent<H, KE>::value, bool> = true>
-		Value& operator[](P&& k)
+		auto& operator[](P&& k)
 		{
-			return try_emplace(std::forward<P>(k))->second;
+			return tryInsert(std::forward<P>(k))->second;
 		}
 		template<typename P, typename Q = Value, typename H = HashFunc, typename KE = KeyEqual,
 		std::enable_if<!std::is_same<void, Q>::value && both_transparent<H, KE>::value, bool> = true>
-		Value& operator[](P&& k) const
+		const auto& operator[](P&& k) const
 		{
 			return find(std::forward<P>(k))->second;
 		}
@@ -587,7 +656,7 @@ namespace smpl
 		template<typename ...Args>
 		Iterator try_insert(const Key& key, Args&&... args)
 		{
-			return try_emplace(key, std::forward<Args>(args)...);
+			return tryInsert(key, std::forward<Args>(args)...);
 		}
 
 		/**
@@ -602,7 +671,7 @@ namespace smpl
 		template<typename ...Args>
 		Iterator try_insert(Key&& key, Args&&... args)
 		{
-			return try_emplace(std::move(key), std::forward<Args>(args)...);
+			return tryInsert(std::move(key), std::forward<Args>(args)...);
 		}
 
 		/**
@@ -615,7 +684,7 @@ namespace smpl
 		*/
 		Iterator insert(const KeyValueType& v)
 		{
-			return emplace(v);
+			return doInsert(v);
 		}
 
 		/**
@@ -628,65 +697,49 @@ namespace smpl
 		*/
 		Iterator insert(KeyValueType&& v)
 		{
-			return emplace(std::move(v));
+			return doInsert(std::move(v));
 		}
 
 		/**
-		* @brief Emplaces into the hash table.
-		*      This will construct a new element with the given arguments in place.
-		*          Note that this will always construct a new element first and will remove it if an element is found that
-		*          uses the specified key.
-		*      May rehash. If you exceed 80% fill rate, it will rehash.
-		*          Note that a rehash does not invalidate any iterator references however, if the internal data structure
-		*          (std::vector) resizes, it will invalidate all iterators.
+		* @brief Attempts to insert into the hash table. If it already exists, assign the current value to that spot.
+		*			Useful when you need to replace a value that may exist or create it if it does not.
+		*      KeyValueType is either the Key or std::pair<Key, Value> depending on if its a Set or Map.
+		*      Returns an iterator to either the newely constructed element or an existing element with the specified key.
 		* 
 		* @param v 
 		* @return Iterator 
 		*/
-		Iterator emplace(KeyValueType&& v)
+		Iterator insertOrReplace(const KeyValueType& v)
 		{
-			if(fastHashInfo.size() == 0)
-			{
-				fastHashInfo = std::vector<uint8_t>(MINIMUM_BUCKETS);
-				redirectInfo = std::vector<HashRedirectPair>(MINIMUM_BUCKETS);
-			}
+			size_t oldTotalElements = totalElements;
+			auto it = doInsert(v);
 			
-			//extra check needed if and only if its possible to overflow
-			//does nothing if BIG is enabled
-			checkIfOverflowPossible();
-			
-			const Key& key = getKey(v);
-			uint64_t actualHash = hasher(key);
-
-			uint8_t partialHash = extractPartialHash(actualHash); //must replace top bit so its considered valid
-			RedirectType extraHash = extractPartialHashEx(actualHash);
-			uint64_t intendedLocation = actualHash % fastHashInfo.size();
-			while(!getLocationEmpty(intendedLocation))
-			{
-				if(checkForDuplicate(intendedLocation, partialHash, extraHash, key))
-				{
-					return appendMultimap(intendedLocation, std::forward<KeyValueType>(v)); //will handle the pop_back()
-				}
-
-				intendedLocation = (intendedLocation+1) % fastHashInfo.size();
-			}
-			
-			attemptToAdd(std::forward<KeyValueType>(v));
-			fastHashInfo[intendedLocation] = partialHash;
-			redirectInfo[intendedLocation] = {actualHash, arr.size()-1};
-			totalElements++;
-
-			auto returnIt = constructIterator(arr.size()-1, intendedLocation, false, extractListIterator(arr.size()-1));
-			
-			float currentLoadBalance = (float)arr.size() / (float)fastHashInfo.size();
-			if(currentLoadBalance > MaxLoadBalance)
-			{
-				//re-balance
-				rebalance();
-			}
-			
-			return returnIt; //Bucket index may be invalid if a rehash occured right before this returns.
+			//if size increased, its new
+			if(totalElements == oldTotalElements)
+				*it = v;
+			return it;
 		}
+		
+		/**
+		* @brief Attempts to insert into the hash table. If it already exists, assign the current value to that spot.
+		*			Useful when you need to replace a value that may exist or create it if it does not.
+		*      KeyValueType is either the Key or std::pair<Key, Value> depending on if its a Set or Map.
+		*      Returns an iterator to either the newely constructed element or an existing element with the specified key.
+		* 
+		* @param v 
+		* @return Iterator 
+		*/
+		Iterator insertOrReplace(KeyValueType&& v)
+		{
+			size_t oldTotalElements = totalElements;
+			auto it = doInsert(std::move(v));
+
+			//if size increased, its new
+			if(totalElements == oldTotalElements)
+				*it = std::move(v);
+			return it;
+		}
+	
 		
 		/**
 		* @brief Attempts to find an element by P comparing it to it an element's Key.
@@ -700,13 +753,13 @@ namespace smpl
 		* @return Iterator 
 		*/
 		template<typename P, typename H = HashFunc, typename KE = KeyEqual,
-		std::enable_if<both_transparent<H, KE>::value, bool> = true>
+		typename std::enable_if<both_transparent<H, KE>::value, bool>::type = true>
 		Iterator find(const P& p)
 		{
 			return search(p);
 		}
 		template<typename P, typename H = HashFunc, typename KE = KeyEqual,
-		std::enable_if<both_transparent<H, KE>::value, bool> = true>
+		typename std::enable_if<both_transparent<H, KE>::value, bool>::type = true>
 		ConstIterator find(const P& p) const
 		{
 			return search(p);
@@ -750,7 +803,7 @@ namespace smpl
 		*      Returns an iterator to the next valid key if it exists. If this is not a multimap, returns an invalid iterator.
 		*/
 		template<typename P, typename H = HashFunc, typename KE = KeyEqual,
-		std::enable_if<both_transparent<H, KE>::value, bool> = true>
+		typename std::enable_if<both_transparent<H, KE>::value, bool>::type = true>
 		Iterator erase(const P& k)
 		{
 			return remove(find(k), true);
@@ -950,12 +1003,117 @@ namespace smpl
 			arr.emplace_back(std::forward<Args>(args)...);
 		}
 
-		template<typename K, typename... Args>
-		Iterator try_emplace(K&& key, Args&&... args)
+		/**
+		* @brief Inserts into the hash table.
+		*      This will construct a new element with the given arguments in place.
+		*          Note that this will always construct a new element first and will remove it if an element is found that
+		*          uses the specified key.
+		*      May rehash. If you exceed 80% fill rate, it will rehash.
+		*          Note that a rehash does not invalidate any iterator references however, if the internal data structure
+		*          (std::vector) resizes, it will invalidate all iterators.
+		* 
+		* @param v 
+		* @return Iterator 
+		*/
+		Iterator doInsert(KeyValueType&& v)
 		{
 			if(fastHashInfo.size() == 0)
 			{
 				fastHashInfo = std::vector<uint8_t>(MINIMUM_BUCKETS);
+				memset(fastHashInfo.data(), 0, MINIMUM_BUCKETS);
+				redirectInfo = std::vector<HashRedirectPair>(MINIMUM_BUCKETS);
+			}
+			
+			//extra check needed if and only if its possible to overflow
+			//does nothing if BIG is enabled
+			checkIfOverflowPossible();
+			
+			const Key& key = getKey(v);
+			uint64_t actualHash = hasher(key);
+
+			uint8_t partialHash = extractPartialHash(actualHash); //must replace top bit so its considered valid
+			RedirectType extraHash = extractPartialHashEx(actualHash);
+			uint64_t intendedLocation = actualHash % fastHashInfo.size();
+			while(!getLocationEmpty(intendedLocation))
+			{
+				if(checkForDuplicate(intendedLocation, partialHash, extraHash, key))
+				{
+					return appendMultimap(intendedLocation, std::forward<KeyValueType>(v)); //will handle the pop_back()
+				}
+
+				intendedLocation = (intendedLocation+1) % fastHashInfo.size();
+			}
+			
+			attemptToAdd(std::forward<KeyValueType>(v));
+			fastHashInfo[intendedLocation] = partialHash;
+			redirectInfo[intendedLocation] = {actualHash, arr.size()-1};
+			totalElements++;
+
+			auto returnIt = constructIterator(arr.size()-1, intendedLocation, false, extractListIterator(arr.size()-1));
+			
+			float currentLoadBalance = (float)arr.size() / (float)fastHashInfo.size();
+			if(currentLoadBalance > MaxLoadBalance)
+			{
+				//re-balance
+				rebalance();
+			}
+			
+			return returnIt; //Bucket index may be invalid if a rehash occured right before this returns.
+		}
+		
+		Iterator doInsert(const KeyValueType& v)
+		{
+			if(fastHashInfo.size() == 0)
+			{
+				fastHashInfo = std::vector<uint8_t>(MINIMUM_BUCKETS);
+				memset(fastHashInfo.data(), 0, MINIMUM_BUCKETS);
+				redirectInfo = std::vector<HashRedirectPair>(MINIMUM_BUCKETS);
+			}
+			
+			//extra check needed if and only if its possible to overflow
+			//does nothing if BIG is enabled
+			checkIfOverflowPossible();
+			
+			const Key& key = getKey(v);
+			uint64_t actualHash = hasher(key);
+
+			uint8_t partialHash = extractPartialHash(actualHash); //must replace top bit so its considered valid
+			RedirectType extraHash = extractPartialHashEx(actualHash);
+			uint64_t intendedLocation = actualHash % fastHashInfo.size();
+			while(!getLocationEmpty(intendedLocation))
+			{
+				if(checkForDuplicate(intendedLocation, partialHash, extraHash, key))
+				{
+					return appendMultimap(intendedLocation, v); //will handle the pop_back()
+				}
+
+				intendedLocation = (intendedLocation+1) % fastHashInfo.size();
+			}
+			
+			attemptToAdd(v);
+			fastHashInfo[intendedLocation] = partialHash;
+			redirectInfo[intendedLocation] = {actualHash, arr.size()-1};
+			totalElements++;
+
+			auto returnIt = constructIterator(arr.size()-1, intendedLocation, false, extractListIterator(arr.size()-1));
+			
+			float currentLoadBalance = (float)arr.size() / (float)fastHashInfo.size();
+			if(currentLoadBalance > MaxLoadBalance)
+			{
+				//re-balance
+				rebalance();
+			}
+			
+			return returnIt; //Bucket index may be invalid if a rehash occured right before this returns.
+		}
+
+		template<typename K, typename... Args>
+		Iterator tryInsert(K&& key, Args&&... args)
+		{
+			if(fastHashInfo.size() == 0)
+			{
+				fastHashInfo = std::vector<uint8_t>(MINIMUM_BUCKETS);
+				memset(fastHashInfo.data(), 0, MINIMUM_BUCKETS);
 				redirectInfo = std::vector<HashRedirectPair>(MINIMUM_BUCKETS);
 			}
 			
@@ -997,7 +1155,7 @@ namespace smpl
 		}
 
 		//constexpr here not allowed unless it is c++14 or higher
-		SHTABLE_CONSTEXPR void constEmplace(const KeyValueType&& v)
+		SHTABLE_CONSTEXPR void constInsert(const KeyValueType&& v)
 		{
 			//no need to check overflow. Already did that in the constructor.
 			//If this is being called from ANYWHERE ELSE, ensure that overflow can't happen
@@ -1076,9 +1234,12 @@ namespace smpl
 			if(UNLIKELY(it == end()))
 				return end();
 
+			if(it.index >= arr.size())
+				return end();
 			//check if iterator's bucket index is valid. It must not be -1 (SIZE_MAX) and it must be before a rehash.
 			//If failed, recompute the bucket index.
 			//NOTE: an invalid iterator will have an invalid bucket index and can not recompute the bucket index.
+
 
 			//will attempt to delete from the spot first. Can get away with it if its more than 1 thing in the list
 			size_t elementCounter = elementsAtLocation(it.index);
@@ -1094,10 +1255,10 @@ namespace smpl
 
 			Iterator newIT = it;
 			//slower path
-			if(it.rehashCounter != rehashCounter || it.bucketIndex == -1)
+			if(it.criticalChangeCounter != criticalChangeCounter || it.bucketIndex == -1)
 			{
 				//invalid bucket index. Recompute (search for it again)
-				newIT = find(it->first);
+				newIT = find(getKey(*it));
 				newIT.all = it.all;
 			}
 
@@ -1105,8 +1266,11 @@ namespace smpl
 			if(UNLIKELY(newIT == end()))
 				return end(); //something very very odd happened.
 
+			if(UNLIKELY(getLocationEmpty(newIT.bucketIndex) || getRedirectInfo(newIT.bucketIndex) != newIT.index))
+				return end(); //probably doesn't exist or this iterator is invalid
+
 			uint64_t bucketLocation = newIT.bucketIndex;
-			
+
 			//if found, find the location of the last item in arr and swap that with our current spot
 
 			uint64_t lastSpotHash = hasher(getKey(arr.back()));
@@ -1114,7 +1278,7 @@ namespace smpl
 			RedirectType lastSpotExtraHash = extractPartialHashEx(lastSpotHash);
 			uint64_t lastSpotLocation = lastSpotHash % fastHashInfo.size();
 			
-			//it exists so we can skip the extra work of checking free slots.
+			//it exists so we can skip the extra work of checking free slots. A little different than checkDuplicate() so can't use that
 			while(true)
 			{
 				if(getPartialHash(lastSpotLocation) == lastSpotPartialHash) //fast path but 2 checks which may be unnecessary
@@ -1128,35 +1292,43 @@ namespace smpl
 				lastSpotLocation = (lastSpotLocation+1) % fastHashInfo.size();
 			}
 
+
 			//set current location to be deleted
-			fastHashInfo[bucketLocation] = 0;
+			fastHashInfo[bucketLocation] = EMPTY_SLOT;
 			
 			//swap data and pop back which completes the deletion
-			swapDataStorageAndDelete(it.index);
-			swapExtraKeyStorageAndDelete(it.index);
+			swapDataStorageAndDelete(newIT.index);
+			swapExtraKeyStorageAndDelete(newIT.index);
 
 			//swap locations too
 			redirectInfo[lastSpotLocation].second = redirectInfo[bucketLocation].second;
-
-			//extra step. shift data back till we hit an empty spot or we hit a node that is in its desired spot
-			uint64_t previousLocation = bucketLocation;
+			redirectInfo[bucketLocation] = {0, 0};
+			
+			//extra step. shift data back till we hit an empty spot. Note that we need to keep track of the last known empty spot too so previousLocation shouldn't always be updated.
+			//shiftback is not directly back but a swap with the last spot we care about
+			uint64_t shiftBackDistance = 1;
+			uint64_t swapLocation = bucketLocation;
 			bucketLocation = (bucketLocation+1) % fastHashInfo.size();
 
 			while(!getLocationEmpty(bucketLocation))
 			{
-				if(getDistanceFromDesiredSpot(bucketLocation) > 0)
+				//calculate distance from desired spot. Calculate distance from swap location. If they are the same or distanceToDesired spot is greater, swapping is okay to do
+				size_t dis = getDistanceFromDesiredSpot(bucketLocation);
+				
+				if(dis >= shiftBackDistance)
 				{
-					fastHashInfo[previousLocation] = fastHashInfo[bucketLocation];
-					redirectInfo[previousLocation] = redirectInfo[bucketLocation];
+					std::swap(fastHashInfo[swapLocation], fastHashInfo[bucketLocation]);
+					std::swap(redirectInfo[swapLocation], redirectInfo[bucketLocation]);
+					swapLocation = bucketLocation;
+					shiftBackDistance = 0; //will be set to 1 right after
 				}
-				else
-					break;
-
-				previousLocation = bucketLocation;
+				
+				shiftBackDistance++;
 				bucketLocation = (bucketLocation+1) % fastHashInfo.size();
 			}
 
 			totalElements -= elementCounter;
+			criticalChangeCounter++; //bucket locations have changed. TotalElements have changed. Last element in arr has changed location. Should consider all iterators invalid that rely on bucketIndex. So any iterators used for deletion
 
 			//IMPORTANT. There are cases where you'd want the next valid spot even if its not apart of the same list.
 			//example: iterating from begin() to end() over all elements (not caring about the key) and deleting certain elements based on some criteria that is not strictly the key.
@@ -1215,8 +1387,9 @@ namespace smpl
 			newSize = __max(newSize, MINIMUM_BUCKETS); //not allowed to have less than MINIMUM_BUCKETS which is set to 256
 
 			std::vector<uint8_t> newHashInfo = std::vector<uint8_t>(newSize);
+			memset(newHashInfo.data(), 0, newSize);
 			std::vector<HashRedirectPair> newRedirectInfo = std::vector<HashRedirectPair>(newSize);
-			rehashCounter++;
+			criticalChangeCounter++;
 
 			for(size_t i=0; i<fastHashInfo.size(); i++)
 			{
@@ -1338,9 +1511,8 @@ namespace smpl
 		}
 
 		//Value
-		template<class K = KeyValueType>
-		typename std::enable_if<std::is_same<Key, K>::value, const Value&>::type
-		constexpr getValue(const KeyValueType& v) const
+		template<class K = KeyValueType, typename std::enable_if<std::is_same<Key, K>::value, bool>::type = true>
+		constexpr auto& getValue(const KeyValueType& v) const
 		{
 			return v;
 		}
@@ -1354,9 +1526,8 @@ namespace smpl
 		}
 
 		//std::pair<Key, Value>
-		template<class K = KeyValueType>
-		typename std::enable_if<!std::is_same<Key, K>::value, const Value&>::type
-		constexpr getValue(const KeyValueType& v) const
+		template<class K = KeyValueType, typename std::enable_if<!std::is_same<Key, K>::value, bool>::type = true>
+		constexpr auto& getValue(const KeyValueType& v) const
 		{
 			return v.second;
 		}
@@ -1366,7 +1537,9 @@ namespace smpl
 			return getKey(v.front());
 		}
 		
-		constexpr const Value& getValue(const std::list<KeyValueType>& v) const
+		
+		template<class K = KeyValueType, typename std::enable_if<!std::is_same<Key, K>::value, bool>::type = true>
+		constexpr const auto& getValue(const std::list<KeyValueType>& v) const
 		{
 			return getValue(v.front());
 		}
@@ -1392,7 +1565,8 @@ namespace smpl
 
 		void swapDataStorageAndDelete(uint64_t index)
 		{
-			std::swap(arr.back(), arr[index]);
+			if(index != arr.size()-1)
+				std::swap(arr[arr.size()-1], arr[index]);
 			arr.pop_back();
 		}
 		
@@ -1400,7 +1574,8 @@ namespace smpl
 		typename std::enable_if<M, void>::type
 		swapExtraKeyStorageAndDelete(uint64_t index)
 		{
-			std::swap(extraKeyStorage.back(), extraKeyStorage[index]);
+			if(index != arr.size()-1)
+				std::swap(extraKeyStorage[extraKeyStorage.size()-1], extraKeyStorage[index]);
 			extraKeyStorage.pop_back();
 		}
 
@@ -1479,19 +1654,20 @@ namespace smpl
 
 		Iterator constructIterator(size_t index, size_t bucketIndex, bool all, typename std::list<KeyValueType>::iterator desiredListIterator)
 		{
-			return Iterator(this, index, bucketIndex, rehashCounter, all, desiredListIterator);
+			return Iterator(this, index, bucketIndex, criticalChangeCounter, all, desiredListIterator);
 		}
 		
 		ConstIterator constructIterator(size_t index, size_t bucketIndex, bool all, typename std::list<KeyValueType>::const_iterator desiredListIterator) const
 		{
-			return ConstIterator(this, index, bucketIndex, rehashCounter, all, desiredListIterator);
+			return ConstIterator(this, index, bucketIndex, criticalChangeCounter, all, desiredListIterator);
 		}
 
 		friend ConstSimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
 		friend SimpleHashTableIterator<Key, Value, MULTI, HashFunc, KeyEqual, BIG>;
 
 		static const uint8_t VALID_BIT = 0x80;
-		const float MaxLoadBalance = 0.80;
+		static const uint8_t EMPTY_SLOT = 0x00;
+		static const float MaxLoadBalance;
 
 		std::vector<uint8_t> fastHashInfo; //0x00 == empty. 0x7F == deleted (only first bit empty)
 		std::vector<HashRedirectPair> redirectInfo; //redirect info + stored hash
@@ -1500,10 +1676,13 @@ namespace smpl
 
 		//Typically in sync with arr but for a multimap, must also keep track of all the elements in each list. Ideally, size() = O(1)
 		size_t totalElements = 0;
-		uint64_t rehashCounter = 0;
+		uint64_t criticalChangeCounter = 0;
 
-		HashFunc hasher;
-		KeyEqual keyEqualFunc;
+		HashFunc hasher{};
+		KeyEqual keyEqualFunc{};
 
 	};
+
+	template<typename Key, typename Value, bool MULTI, class HashFunc, typename KeyEqual, bool BIG>
+	const float SimpleHashTable<Key,Value,MULTI,HashFunc,KeyEqual,BIG>::MaxLoadBalance = 0.80;
 }
